@@ -179,7 +179,7 @@ const generateStructuredDatasetFlow = ai.defineFlow(
       const { output } = await ai.generate({
         prompt: `Generate exactly ${numRecords} realistic records following this JSON schema: ${customSchema}. 
                  ${description ? `Additional requirements: ${description}` : ''}
-                 Ensure the output is ONLY a valid JSON array of records. Be efficient and avoid verbose text outside the JSON.`,
+                 Ensure the output is ONLY a valid JSON array of records. Do not include any text, markdown, or explanation outside of the JSON array.`,
         config: generationConfig,
       });
       
@@ -189,7 +189,7 @@ const generateStructuredDatasetFlow = ai.defineFlow(
         JSON.parse(cleanJson);
         return { generatedData: cleanJson };
       } catch (e) {
-        throw new Error('Failed to generate valid JSON for the custom schema.');
+        throw new Error('Failed to generate valid JSON for the provided custom schema. Please ensure the schema is valid.');
       }
     }
 
@@ -201,36 +201,31 @@ const generateStructuredDatasetFlow = ai.defineFlow(
     const recordSchema = predefinedSchemas[datasetType.toLowerCase()];
     
     if (recordSchema) {
-      const fullSchema = z.array(recordSchema);
       const { output } = await ai.generate({
-        output: { schema: fullSchema },
+        output: { schema: z.array(recordSchema) },
         prompt: `You are an expert data generator. Generate exactly ${numRecords} realistic, high-fidelity records for a ${datasetType} dataset.
                  ${description ? `Context/Requirements: ${description}` : ''}
-                 Focus on speed and structural accuracy. Respect the field descriptions and types in the requested schema.`,
+                 Focus on speed and structural accuracy.`,
         config: generationConfig,
       });
 
       if (!output) throw new Error('LLM failed to generate structured data.');
       return { generatedData: JSON.stringify(output, null, 2) };
     } else {
-      // It's a custom type name, ask LLM to infer a schema and generate
+      // It's a custom type name typed by the user. 
+      // We use a generic array of records schema to force the LLM into structured output mode.
       const { output } = await ai.generate({
+        output: { schema: z.array(z.record(z.any())) },
         prompt: `You are an expert data generator. The user wants a dataset representing: "${datasetType}". 
                  Generate exactly ${numRecords} realistic, high-fidelity records for this entity.
                  ${description ? `Additional Context: ${description}` : ''}
-                 Ensure the output is ONLY a valid JSON array of objects with diverse and relevant properties for this category.
-                 Do not include any text, markdown, or explanation outside of the JSON array.`,
+                 Infer an appropriate and diverse set of properties for records of type "${datasetType}".
+                 Ensure the output is a valid JSON array of objects.`,
         config: generationConfig,
       });
 
-      const text = output?.text || '';
-      try {
-        const cleanJson = text.replace(/```json\n?|\n?```/g, '').trim();
-        JSON.parse(cleanJson);
-        return { generatedData: cleanJson };
-      } catch (e) {
-        throw new Error(`Failed to generate valid JSON for the custom category "${datasetType}".`);
-      }
+      if (!output) throw new Error(`Failed to generate data for the custom category "${datasetType}".`);
+      return { generatedData: JSON.stringify(output, null, 2) };
     }
   }
 );
