@@ -15,14 +15,14 @@ import { Switch } from "@/components/ui/switch";
 import { 
   Download, Loader2, Sparkles, Database, FileJson, FileSpreadsheet, 
   CircleHelp, Tag, Type, Building2, Stethoscope, GraduationCap, 
-  Activity, Save, BookOpen, Trash2
+  Activity, Save, BookOpen, Trash2, Star, Package, Ticket, HomeIcon
 } from "lucide-react";
 import { generateStructuredDataset } from "@/ai/flows/generate-structured-dataset";
 import { generateDemoDataset } from "@/ai/flows/generate-demo-dataset-flow";
 import { useToast } from "@/hooks/use-toast";
 import { jsonToCsv, downloadFile } from "@/lib/data-utils";
 
-type DatasetType = 'qa' | 'classification' | 'text_label' | 'records' | 'company' | 'medical' | 'school' | 'medical_diagnosis';
+type DatasetType = 'qa' | 'classification' | 'text_label' | 'records' | 'company' | 'medical' | 'school' | 'medical_diagnosis' | 'customer_review' | 'product_inventory' | 'support_ticket' | 'real_estate';
 
 interface PromptTemplate {
   id: string;
@@ -43,6 +43,10 @@ const DATASET_TYPES: { value: DatasetType; label: string; icon: React.ReactNode 
   { value: 'medical', label: 'Medical History', icon: <Stethoscope className="w-4 h-4" /> },
   { value: 'school', label: 'Academic Records', icon: <GraduationCap className="w-4 h-4" /> },
   { value: 'medical_diagnosis', label: 'Clinical Diagnosis', icon: <Activity className="w-4 h-4" /> },
+  { value: 'customer_review', label: 'Customer Reviews', icon: <Star className="w-4 h-4" /> },
+  { value: 'product_inventory', label: 'Product Inventory', icon: <Package className="w-4 h-4" /> },
+  { value: 'support_ticket', label: 'Support Tickets', icon: <Ticket className="w-4 h-4" /> },
+  { value: 'real_estate', label: 'Real Estate Listings', icon: <HomeIcon className="w-4 h-4" /> },
 ];
 
 export default function DatasetForge() {
@@ -118,7 +122,7 @@ export default function DatasetForge() {
         dataString = result.generatedData;
       }
       setGeneratedData(dataString);
-      toast({ title: "Generation Successful", description: `Generated ${numRecords} records.` });
+      toast({ title: "Generation Successful", description: `Generated ${numRecords} records using Flash Engine.` });
     } catch (error: any) {
       toast({ 
         variant: "destructive", 
@@ -175,7 +179,14 @@ export default function DatasetForge() {
               </div>
 
               <div className="space-y-2">
-                <Label>Number of Records (1-50)</Label>
+                <div className="flex justify-between items-center">
+                  <Label>Number of Records (1-50)</Label>
+                  {numRecords > 20 && (
+                    <span className="text-[10px] bg-accent/10 text-accent px-2 py-0.5 rounded font-bold animate-pulse">
+                      FLASH OPTIMIZED
+                    </span>
+                  )}
+                </div>
                 <Input 
                   type="number" 
                   min={1} 
@@ -188,7 +199,7 @@ export default function DatasetForge() {
               <div className="space-y-2">
                 <Label>Context / Specific Requirements</Label>
                 <Textarea 
-                  placeholder="e.g. Focus on tech startups in the fintech space..." 
+                  placeholder="e.g. Focus on luxury real estate in suburban New York..." 
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="min-h-[100px]"

@@ -76,6 +76,50 @@ const MedicalDiagnosisRecordSchema = z.object({
   dateOfDiagnosis: z.string().datetime().describe('Date when the diagnosis was made.'),
 });
 
+const CustomerReviewSchema = z.object({
+  id: z.string().uuid(),
+  productName: z.string(),
+  reviewerName: z.string(),
+  rating: z.number().min(1).max(5),
+  reviewText: z.string().describe('A realistic customer review of the product.'),
+  sentiment: z.enum(['positive', 'neutral', 'negative']),
+  isVerifiedPurchase: z.boolean(),
+});
+
+const ProductInventorySchema = z.object({
+  id: z.string().uuid(),
+  sku: z.string().describe('Unique SKU identifier.'),
+  productName: z.string(),
+  category: z.string(),
+  price: z.number(),
+  stockQuantity: z.number().int(),
+  supplier: z.string(),
+  lastRestocked: z.string().datetime(),
+});
+
+const SupportTicketSchema = z.object({
+  id: z.string().uuid(),
+  subject: z.string(),
+  description: z.string(),
+  status: z.enum(['open', 'pending', 'resolved', 'closed']),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']),
+  customerEmail: z.string().email(),
+  assignedAgent: z.string(),
+  createdAt: z.string().datetime(),
+});
+
+const RealEstateSchema = z.object({
+  id: z.string().uuid(),
+  address: z.string(),
+  propertyType: z.enum(['house', 'apartment', 'condo', 'townhouse']),
+  price: z.number(),
+  bedrooms: z.number().int(),
+  bathrooms: z.number(),
+  squareFeet: z.number(),
+  listingStatus: z.enum(['active', 'pending', 'sold']),
+  amenities: z.array(z.string()),
+});
+
 const GenericRecordSchema = z.object({
   id: z.string().uuid().describe('Unique identifier for the record.'),
   data: z.record(z.any()).describe('Arbitrary key-value pairs representing the record data.'),
@@ -90,6 +134,10 @@ const predefinedSchemas = {
   medical: MedicalRecordSchema,
   school: SchoolRecordSchema,
   medical_diagnosis: MedicalDiagnosisRecordSchema,
+  customer_review: CustomerReviewSchema,
+  product_inventory: ProductInventorySchema,
+  support_ticket: SupportTicketSchema,
+  real_estate: RealEstateSchema,
 };
 
 const datasetTypeEnum = z.enum([
@@ -101,6 +149,10 @@ const datasetTypeEnum = z.enum([
   'medical',
   'school',
   'medical_diagnosis',
+  'customer_review',
+  'product_inventory',
+  'support_ticket',
+  'real_estate',
 ]);
 
 const GenerateStructuredDatasetInputSchema = z.object({
@@ -133,17 +185,23 @@ const generateStructuredDatasetFlow = ai.defineFlow(
   async (input) => {
     const { datasetType, customSchema, numRecords, description } = input;
 
-    // Handle Custom Schema case separately since we can't easily turn it into a Zod object at runtime
+    // Fast configuration for high-volume requests
+    const generationConfig = {
+      temperature: 0.8,
+      topP: 0.95,
+      // Flash model is inherently fast, we ensure it's not restricted by safety if not needed
+    };
+
     if (customSchema) {
       const { output } = await ai.generate({
-        prompt: `Generate ${numRecords} realistic records following this JSON schema: ${customSchema}. 
+        prompt: `Generate exactly ${numRecords} realistic records following this JSON schema: ${customSchema}. 
                  ${description ? `Additional requirements: ${description}` : ''}
-                 Ensure the output is ONLY a valid JSON array of records.`,
+                 Ensure the output is ONLY a valid JSON array of records. Be efficient and avoid verbose text outside the JSON.`,
+        config: generationConfig,
       });
       
       const text = output?.text || '';
       try {
-        // Simple attempt to extract JSON if LLM added markdown backticks
         const cleanJson = text.replace(/```json\n?|\n?```/g, '').trim();
         JSON.parse(cleanJson); // Validate
         return { generatedData: cleanJson };
@@ -165,9 +223,10 @@ const generateStructuredDatasetFlow = ai.defineFlow(
 
     const { output } = await ai.generate({
       output: { schema: fullSchema },
-      prompt: `You are an expert data generator. Generate exactly ${numRecords} realistic records for a ${datasetType} dataset.
+      prompt: `You are an expert data generator. Generate exactly ${numRecords} realistic, high-fidelity records for a ${datasetType} dataset.
                ${description ? `Context/Requirements: ${description}` : ''}
-               Respect the field descriptions and types in the requested schema.`,
+               Focus on speed and structural accuracy. Respect the field descriptions and types in the requested schema.`,
+      config: generationConfig,
     });
 
     if (!output) {
