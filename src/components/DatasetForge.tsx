@@ -11,7 +11,6 @@ import {
   Popover, PopoverContent, PopoverTrigger 
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { 
   Download, Loader2, Sparkles, Database, FileJson, FileSpreadsheet, 
   CircleHelp, Tag, Type, Building2, Stethoscope, GraduationCap, 
@@ -19,7 +18,6 @@ import {
   ChevronDown, Search
 } from "lucide-react";
 import { generateStructuredDataset } from "@/ai/flows/generate-structured-dataset";
-import { generateDemoDataset } from "@/ai/flows/generate-demo-dataset-flow";
 import { useToast } from "@/hooks/use-toast";
 import { jsonToCsv, downloadFile } from "@/lib/data-utils";
 import { cn } from "@/lib/utils";
@@ -30,8 +28,6 @@ interface PromptTemplate {
   type: string;
   numRecords: number;
   description: string;
-  advanced: boolean;
-  customSchema: string;
 }
 
 const DATASET_TYPES = [
@@ -55,9 +51,6 @@ export default function DatasetForge() {
   const [datasetType, setDatasetType] = useState('company');
   const [numRecords, setNumRecords] = useState(5);
   const [description, setDescription] = useState('');
-  const [advancedMode, setAdvancedMode] = useState(false);
-  const [customSchema, setCustomSchema] = useState('');
-  const [demoMode, setDemoMode] = useState(false);
   const [generatedData, setGeneratedData] = useState<string | null>(null);
   const [promptLibrary, setPromptLibrary] = useState<PromptTemplate[]>([]);
   const [templateName, setTemplateName] = useState('');
@@ -81,8 +74,6 @@ export default function DatasetForge() {
       type: datasetType,
       numRecords,
       description,
-      advanced: advancedMode,
-      customSchema
     };
     const updated = [...promptLibrary, newTemplate];
     setPromptLibrary(updated);
@@ -95,8 +86,6 @@ export default function DatasetForge() {
     setDatasetType(tpl.type);
     setNumRecords(tpl.numRecords);
     setDescription(tpl.description);
-    setAdvancedMode(tpl.advanced);
-    setCustomSchema(tpl.customSchema);
     toast({ title: "Loaded", description: `Prompt "${tpl.name}" loaded.` });
   };
 
@@ -110,19 +99,12 @@ export default function DatasetForge() {
     setLoading(true);
     setGeneratedData(null);
     try {
-      let dataString = '';
-      if (demoMode) {
-        dataString = await generateDemoDataset({ datasetType });
-      } else {
-        const result = await generateStructuredDataset({
-          datasetType: advancedMode ? undefined : datasetType,
-          customSchema: advancedMode ? customSchema : undefined,
-          numRecords,
-          description
-        });
-        dataString = result.generatedData;
-      }
-      setGeneratedData(dataString);
+      const result = await generateStructuredDataset({
+        datasetType,
+        numRecords,
+        description
+      });
+      setGeneratedData(result.generatedData);
       toast({ title: "Generation Successful", description: `Generated ${numRecords} records.` });
     } catch (error: any) {
       toast({ 
@@ -137,13 +119,13 @@ export default function DatasetForge() {
 
   const downloadAsJson = () => {
     if (!generatedData) return;
-    downloadFile(generatedData, `dataset_${datasetType}_${Date.now()}.json`, 'application/json');
+    downloadFile(generatedData, `dataset_${datasetType.replace(/\s+/g, '_')}_${Date.now()}.json`, 'application/json');
   };
 
   const downloadAsCsv = () => {
     if (!generatedData) return;
     const csvContent = jsonToCsv(generatedData);
-    downloadFile(csvContent, `dataset_${datasetType}_${Date.now()}.csv`, 'text/csv');
+    downloadFile(csvContent, `dataset_${datasetType.replace(/\s+/g, '_')}_${Date.now()}.csv`, 'text/csv');
   };
 
   const selectPreset = (val: string) => {
@@ -162,7 +144,7 @@ export default function DatasetForge() {
                 <Sparkles className="w-5 h-5 text-accent" />
                 Forge Parameters
               </CardTitle>
-              <CardDescription>Configure your synthetic data generation engine.</CardDescription>
+              <CardDescription>Configure your high-speed generation engine.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
@@ -173,14 +155,13 @@ export default function DatasetForge() {
                       placeholder="e.g. Clinical Trials, Tweets, Luxury Hotels..." 
                       value={datasetType}
                       onChange={(e) => setDatasetType(e.target.value)}
-                      disabled={advancedMode}
                       className="pr-10"
                     />
                     <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground opacity-50" />
                   </div>
                   <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" size="icon" disabled={advancedMode} title="Quick Select Preset">
+                      <Button variant="outline" size="icon" title="Quick Select Preset">
                         <ChevronDown className="w-4 h-4" />
                       </Button>
                     </PopoverTrigger>
@@ -235,34 +216,6 @@ export default function DatasetForge() {
                   className="min-h-[100px]"
                 />
               </div>
-
-              <div className="flex items-center justify-between p-3 border rounded-lg bg-secondary/30">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-semibold">Advanced Mode</Label>
-                  <p className="text-xs text-muted-foreground">Override presets with custom JSON schema.</p>
-                </div>
-                <Switch checked={advancedMode} onCheckedChange={setAdvancedMode} />
-              </div>
-
-              {advancedMode && (
-                <div className="space-y-2 animate-in zoom-in-95 duration-300">
-                  <Label>Custom JSON Schema</Label>
-                  <Textarea 
-                    placeholder='{"type": "object", "properties": { "name": { "type": "string" } }}'
-                    value={customSchema}
-                    onChange={(e) => setCustomSchema(e.target.value)}
-                    className="font-mono text-xs min-h-[150px]"
-                  />
-                </div>
-              )}
-
-              <div className="flex items-center justify-between p-3 border rounded-lg bg-orange-50/50">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-semibold text-orange-700">Demo Mode</Label>
-                  <p className="text-xs text-orange-600">Simulate generation without API keys.</p>
-                </div>
-                <Switch checked={demoMode} onCheckedChange={setDemoMode} />
-              </div>
             </CardContent>
             <CardFooter className="flex flex-col gap-3">
               <Button 
@@ -283,14 +236,14 @@ export default function DatasetForge() {
                 )}
               </Button>
               
-              <div className="flex w-full gap-2">
+              <div className="flex w-full gap-2 border-t pt-3 mt-1">
                 <Input 
-                  placeholder="Save configuration as..." 
+                  placeholder="Save template as..." 
                   value={templateName}
                   onChange={(e) => setTemplateName(e.target.value)}
                   className="flex-1"
                 />
-                <Button variant="outline" size="icon" onClick={saveToLibrary} title="Save to Prompt Library">
+                <Button variant="outline" size="icon" onClick={saveToLibrary} title="Save to Library">
                   <Save className="w-4 h-4" />
                 </Button>
               </div>
@@ -307,7 +260,7 @@ export default function DatasetForge() {
                   <Database className="w-5 h-5" />
                   Output Console
                 </CardTitle>
-                <CardDescription>Live preview of your generated synthetic data.</CardDescription>
+                <CardDescription>Live preview of your synthetic data.</CardDescription>
               </div>
               {generatedData && (
                 <div className="flex gap-2">
@@ -328,7 +281,7 @@ export default function DatasetForge() {
                   <div className="p-4 rounded-full bg-primary/10 animate-pulse">
                     <Sparkles className="w-8 h-8 text-primary" />
                   </div>
-                  <p className="text-sm font-medium animate-pulse">Consulting the digital smiths...</p>
+                  <p className="text-sm font-medium animate-pulse">Generating high-fidelity records...</p>
                 </div>
               ) : generatedData ? (
                 <div className="bg-slate-950 text-slate-50 p-4 rounded-lg font-mono text-xs overflow-auto max-h-[500px] border shadow-inner">
@@ -337,7 +290,7 @@ export default function DatasetForge() {
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-12 text-center space-y-4 border-2 border-dashed rounded-lg">
                   <Database className="w-12 h-12 opacity-20" />
-                  <p>Configure and generate to see results here.</p>
+                  <p>Configure parameters and click generate to see results.</p>
                 </div>
               )}
             </CardContent>
@@ -349,7 +302,7 @@ export default function DatasetForge() {
                 <BookOpen className="w-5 h-5" />
                 Prompt Library
               </CardTitle>
-              <CardDescription>Reuse your most successful configurations.</CardDescription>
+              <CardDescription>Reuse your successful configurations.</CardDescription>
             </CardHeader>
             <CardContent>
               {promptLibrary.length > 0 ? (
@@ -359,11 +312,11 @@ export default function DatasetForge() {
                       key={tpl.id} 
                       className="group flex items-center justify-between p-3 rounded-md border bg-secondary/20 hover:bg-secondary/40 transition-colors"
                     >
-                      <div className="flex flex-col cursor-pointer" onClick={() => loadFromLibrary(tpl)}>
+                      <div className="flex flex-col cursor-pointer flex-1" onClick={() => loadFromLibrary(tpl)}>
                         <span className="font-semibold text-sm">{tpl.name}</span>
                         <span className="text-xs text-muted-foreground capitalize">{tpl.type} • {tpl.numRecords} recs</span>
                       </div>
-                      <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => deleteFromLibrary(tpl.id)}>
+                      <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); deleteFromLibrary(tpl.id); }}>
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </Button>
                     </div>
