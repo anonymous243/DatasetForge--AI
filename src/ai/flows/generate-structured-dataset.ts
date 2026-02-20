@@ -43,7 +43,7 @@ const CompanyRecordSchema = z.object({
 const MedicalRecordSchema = z.object({
   id: z.string().uuid().describe('Unique identifier for the medical record.'),
   patientName: z.string().describe('Full name of the patient.'),
-  dateOfBirth: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).describe('Patient\'s date of birth in YYYY-MM-DD format.'),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Patient\'s date of birth in YYYY-MM-DD format.'),
   gender: z.enum(['Male', 'Female', 'Other']).describe('Patient\'s gender.'),
   diagnosis: z.string().describe('The primary medical diagnosis.'),
   symptoms: z.array(z.string()).describe('List of symptoms reported by the patient.'),
@@ -61,7 +61,7 @@ const SchoolRecordSchema = z.object({
     grade: z.string().max(2),
     teacher: z.string(),
   })).describe('List of courses with grades and teachers.'),
-  enrollmentDate: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).describe('Student\'s enrollment date in YYYY-MM-DD format.'),
+  enrollmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Student\'s enrollment date in YYYY-MM-DD format.'),
   gpa: z.number().min(0.0).max(4.0).optional().describe('Grade Point Average.'),
 });
 
@@ -76,7 +76,6 @@ const MedicalDiagnosisRecordSchema = z.object({
   dateOfDiagnosis: z.string().datetime().describe('Date when the diagnosis was made.'),
 });
 
-// A generic record schema for 'records' type, can be more specific if needed.
 const GenericRecordSchema = z.object({
   id: z.string().uuid().describe('Unique identifier for the record.'),
   data: z.record(z.any()).describe('Arbitrary key-value pairs representing the record data.'),
@@ -86,7 +85,7 @@ const predefinedSchemas = {
   qa: QaRecordSchema,
   classification: ClassificationRecordSchema,
   text_label: TextLabelRecordSchema,
-  records: GenericRecordSchema, // Using generic for 'records'
+  records: GenericRecordSchema,
   company: CompanyRecordSchema,
   medical: MedicalRecordSchema,
   school: SchoolRecordSchema,
@@ -133,85 +132,48 @@ const generateStructuredDatasetFlow = ai.defineFlow(
   },
   async (input) => {
     const { datasetType, customSchema, numRecords, description } = input;
-    let schemaToUse: z.AnyZodObject;
 
+    // Handle Custom Schema case separately since we can't easily turn it into a Zod object at runtime
     if (customSchema) {
+      const { output } = await ai.generate({
+        prompt: `Generate ${numRecords} realistic records following this JSON schema: ${customSchema}. 
+                 ${description ? `Additional requirements: ${description}` : ''}
+                 Ensure the output is ONLY a valid JSON array of records.`,
+      });
+      
+      const text = output?.text || '';
       try {
-        schemaToUse = z.object(JSON.parse(customSchema));
+        // Simple attempt to extract JSON if LLM added markdown backticks
+        const cleanJson = text.replace(/```json\n?|\n?```/g, '').trim();
+        JSON.parse(cleanJson); // Validate
+        return { generatedData: cleanJson };
       } catch (e) {
-        throw new Error(`Invalid custom schema provided: ${e instanceof Error ? e.message : String(e)}`);
+        throw new Error('Failed to generate valid JSON for the custom schema. Please check your schema syntax.');
       }
-    } else if (datasetType) {
-      const selectedSchema = predefinedSchemas[datasetType];
-      if (!selectedSchema) {
-        throw new Error(`Unknown dataset type: ${datasetType}`);
-      }
-      schemaToUse = selectedSchema;
-    } else {
+    }
+
+    if (!datasetType) {
       throw new Error('Either datasetType or customSchema must be provided.');
     }
 
-    const fullSchema = z.array(schemaToUse);
-    const schemaString = JSON.stringify(fullSchema.openapi());
-
-    const promptTemplate = ai.definePrompt({
-      name: 'datasetGenerationPrompt',
-      input: { schema: z.object({
-        numRecords: z.number(),
-        schemaString: z.string(),
-        description: z.string().optional()
-      })},
-      output: { schema: z.object({ generatedData: z.string() }) },
-      prompt: `You are an expert data generator AI. Your task is to generate realistic structured data based on a provided JSON schema.
-
-Instructions:
-- Generate exactly {{numRecords}} records.
-- Ensure the output strictly adheres to the provided JSON schema.
-- The entire output MUST be a valid JSON array conforming to the schema.
-- Do NOT include any conversational text, explanations, or markdown outside the JSON.
-- Make the data as realistic and diverse as possible, respecting the schema field descriptions.
-
-JSON Schema:
-${schemaString}
-
-{{#if description}}
-Additional context/requirements: {{description}}
-{{/if}}
-
-Generated JSON array:`,
-    });
-
-    let retries = 3;
-    let generatedDataString = '';
-
-    while (retries > 0) {
-      try {
-        const { output } = await promptTemplate({
-          numRecords,
-          schemaString,
-          description,
-        });
-
-        if (!output || !output.generatedData) {
-          throw new Error('LLM did not return generatedData.');
-        }
-
-        // Attempt to parse and validate the JSON output against the Zod schema.
-        const parsedData = JSON.parse(output.generatedData);
-        fullSchema.parse(parsedData); // This will throw if validation fails
-        generatedDataString = output.generatedData;
-        break; // Successfully generated and validated, exit retry loop
-      } catch (e) {
-        console.error(`Attempt failed: ${e instanceof Error ? e.message : String(e)}`);
-        retries--;
-        if (retries === 0) {
-          throw new Error(`Failed to generate valid JSON data after multiple retries: ${e instanceof Error ? e.message : String(e)}`);
-        }
-        // Add a small delay before retrying
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+    const recordSchema = predefinedSchemas[datasetType];
+    if (!recordSchema) {
+      throw new Error(`Unknown dataset type: ${datasetType}`);
     }
 
-    return { generatedData: generatedDataString };
+    const fullSchema = z.array(recordSchema);
+
+    const { output } = await ai.generate({
+      output: { schema: fullSchema },
+      prompt: `You are an expert data generator. Generate exactly ${numRecords} realistic records for a ${datasetType} dataset.
+               ${description ? `Context/Requirements: ${description}` : ''}
+               Respect the field descriptions and types in the requested schema.`,
+    });
+
+    if (!output) {
+      throw new Error('LLM failed to generate structured data.');
+    }
+
+    return { generatedData: JSON.stringify(output, null, 2) };
   }
 );

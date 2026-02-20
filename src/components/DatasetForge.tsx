@@ -257,9 +257,8 @@ export default function DatasetForge() {
           </Card>
         </div>
 
-        {/* Right Side: Results & Library */}
+        {/* Results Panel */}
         <div className="lg:col-span-7 space-y-8">
-          {/* Results Panel */}
           <Card className="shadow-xl border-indigo-100 min-h-[400px] flex flex-col bg-white/80 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -303,7 +302,6 @@ export default function DatasetForge() {
             </CardContent>
           </Card>
 
-          {/* Prompt Library */}
           <Card className="shadow-xl border-indigo-100 bg-white/80 backdrop-blur-sm">
             <CardHeader>
               <CardTitle className="text-primary flex items-center gap-2">
