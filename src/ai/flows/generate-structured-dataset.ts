@@ -125,7 +125,7 @@ const GenericRecordSchema = z.object({
   data: z.record(z.any()).describe('Arbitrary key-value pairs representing the record data.'),
 });
 
-const predefinedSchemas = {
+const predefinedSchemas: Record<string, z.ZodObject<any>> = {
   qa: QaRecordSchema,
   classification: ClassificationRecordSchema,
   text_label: TextLabelRecordSchema,
@@ -140,23 +140,8 @@ const predefinedSchemas = {
   real_estate: RealEstateSchema,
 };
 
-const datasetTypeEnum = z.enum([
-  'qa',
-  'classification',
-  'text_label',
-  'records',
-  'company',
-  'medical',
-  'school',
-  'medical_diagnosis',
-  'customer_review',
-  'product_inventory',
-  'support_ticket',
-  'real_estate',
-]);
-
 const GenerateStructuredDatasetInputSchema = z.object({
-  datasetType: datasetTypeEnum.optional().describe('The type of dataset to generate.'),
+  datasetType: z.string().optional().describe('The name or type of dataset to generate (e.g., "qa", "clinical_trials", "luxury_hotels").'),
   customSchema: z.string().optional().describe('An optional custom JSON schema string. If provided, overrides datasetType.'),
   numRecords: z.number().int().min(1).max(50).default(5).describe('The number of records to generate in the dataset.'),
   description: z.string().optional().describe('Additional description or specific requirements for data generation.'),
@@ -185,11 +170,9 @@ const generateStructuredDatasetFlow = ai.defineFlow(
   async (input) => {
     const { datasetType, customSchema, numRecords, description } = input;
 
-    // Fast configuration for high-volume requests
     const generationConfig = {
       temperature: 0.8,
       topP: 0.95,
-      // Flash model is inherently fast, we ensure it's not restricted by safety if not needed
     };
 
     if (customSchema) {
@@ -203,10 +186,10 @@ const generateStructuredDatasetFlow = ai.defineFlow(
       const text = output?.text || '';
       try {
         const cleanJson = text.replace(/```json\n?|\n?```/g, '').trim();
-        JSON.parse(cleanJson); // Validate
+        JSON.parse(cleanJson);
         return { generatedData: cleanJson };
       } catch (e) {
-        throw new Error('Failed to generate valid JSON for the custom schema. Please check your schema syntax.');
+        throw new Error('Failed to generate valid JSON for the custom schema.');
       }
     }
 
@@ -214,25 +197,40 @@ const generateStructuredDatasetFlow = ai.defineFlow(
       throw new Error('Either datasetType or customSchema must be provided.');
     }
 
-    const recordSchema = predefinedSchemas[datasetType];
-    if (!recordSchema) {
-      throw new Error(`Unknown dataset type: ${datasetType}`);
+    // Check if it's one of our predefined types
+    const recordSchema = predefinedSchemas[datasetType.toLowerCase()];
+    
+    if (recordSchema) {
+      const fullSchema = z.array(recordSchema);
+      const { output } = await ai.generate({
+        output: { schema: fullSchema },
+        prompt: `You are an expert data generator. Generate exactly ${numRecords} realistic, high-fidelity records for a ${datasetType} dataset.
+                 ${description ? `Context/Requirements: ${description}` : ''}
+                 Focus on speed and structural accuracy. Respect the field descriptions and types in the requested schema.`,
+        config: generationConfig,
+      });
+
+      if (!output) throw new Error('LLM failed to generate structured data.');
+      return { generatedData: JSON.stringify(output, null, 2) };
+    } else {
+      // It's a custom type name, ask LLM to infer a schema and generate
+      const { output } = await ai.generate({
+        prompt: `You are an expert data generator. The user wants a dataset representing: "${datasetType}". 
+                 Generate exactly ${numRecords} realistic, high-fidelity records for this entity.
+                 ${description ? `Additional Context: ${description}` : ''}
+                 Ensure the output is ONLY a valid JSON array of objects with diverse and relevant properties for this category.
+                 Do not include any text, markdown, or explanation outside of the JSON array.`,
+        config: generationConfig,
+      });
+
+      const text = output?.text || '';
+      try {
+        const cleanJson = text.replace(/```json\n?|\n?```/g, '').trim();
+        JSON.parse(cleanJson);
+        return { generatedData: cleanJson };
+      } catch (e) {
+        throw new Error(`Failed to generate valid JSON for the custom category "${datasetType}".`);
+      }
     }
-
-    const fullSchema = z.array(recordSchema);
-
-    const { output } = await ai.generate({
-      output: { schema: fullSchema },
-      prompt: `You are an expert data generator. Generate exactly ${numRecords} realistic, high-fidelity records for a ${datasetType} dataset.
-               ${description ? `Context/Requirements: ${description}` : ''}
-               Focus on speed and structural accuracy. Respect the field descriptions and types in the requested schema.`,
-      config: generationConfig,
-    });
-
-    if (!output) {
-      throw new Error('LLM failed to generate structured data.');
-    }
-
-    return { generatedData: JSON.stringify(output, null, 2) };
   }
 );

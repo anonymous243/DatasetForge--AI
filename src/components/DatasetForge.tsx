@@ -8,33 +8,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { 
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
-} from "@/components/ui/select";
+  Popover, PopoverContent, PopoverTrigger 
+} from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { 
   Download, Loader2, Sparkles, Database, FileJson, FileSpreadsheet, 
   CircleHelp, Tag, Type, Building2, Stethoscope, GraduationCap, 
-  Activity, Save, BookOpen, Trash2, Star, Package, Ticket, HomeIcon
+  Activity, Save, BookOpen, Trash2, Star, Package, Ticket, HomeIcon,
+  ChevronDown, Search
 } from "lucide-react";
 import { generateStructuredDataset } from "@/ai/flows/generate-structured-dataset";
 import { generateDemoDataset } from "@/ai/flows/generate-demo-dataset-flow";
 import { useToast } from "@/hooks/use-toast";
 import { jsonToCsv, downloadFile } from "@/lib/data-utils";
-
-type DatasetType = 'qa' | 'classification' | 'text_label' | 'records' | 'company' | 'medical' | 'school' | 'medical_diagnosis' | 'customer_review' | 'product_inventory' | 'support_ticket' | 'real_estate';
+import { cn } from "@/lib/utils";
 
 interface PromptTemplate {
   id: string;
   name: string;
-  type: DatasetType;
+  type: string;
   numRecords: number;
   description: string;
   advanced: boolean;
   customSchema: string;
 }
 
-const DATASET_TYPES: { value: DatasetType; label: string; icon: React.ReactNode }[] = [
+const DATASET_TYPES = [
   { value: 'qa', label: 'Q&A Pairs', icon: <CircleHelp className="w-4 h-4" /> },
   { value: 'classification', label: 'Classification', icon: <Tag className="w-4 h-4" /> },
   { value: 'text_label', label: 'Text Labeling', icon: <Type className="w-4 h-4" /> },
@@ -52,7 +52,7 @@ const DATASET_TYPES: { value: DatasetType; label: string; icon: React.ReactNode 
 export default function DatasetForge() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [datasetType, setDatasetType] = useState<DatasetType>('company');
+  const [datasetType, setDatasetType] = useState('company');
   const [numRecords, setNumRecords] = useState(5);
   const [description, setDescription] = useState('');
   const [advancedMode, setAdvancedMode] = useState(false);
@@ -61,6 +61,7 @@ export default function DatasetForge() {
   const [generatedData, setGeneratedData] = useState<string | null>(null);
   const [promptLibrary, setPromptLibrary] = useState<PromptTemplate[]>([]);
   const [templateName, setTemplateName] = useState('');
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('dataset_forge_prompts');
@@ -122,12 +123,12 @@ export default function DatasetForge() {
         dataString = result.generatedData;
       }
       setGeneratedData(dataString);
-      toast({ title: "Generation Successful", description: `Generated ${numRecords} records using Flash Engine.` });
+      toast({ title: "Generation Successful", description: `Generated ${numRecords} records.` });
     } catch (error: any) {
       toast({ 
         variant: "destructive", 
         title: "Generation Failed", 
-        description: error.message || "An unexpected error occurred. Switching to demo mode might help if API keys are missing." 
+        description: error.message || "An unexpected error occurred." 
       });
     } finally {
       setLoading(false);
@@ -145,6 +146,11 @@ export default function DatasetForge() {
     downloadFile(csvContent, `dataset_${datasetType}_${Date.now()}.csv`, 'text/csv');
   };
 
+  const selectPreset = (val: string) => {
+    setDatasetType(val);
+    setIsPopoverOpen(false);
+  };
+
   return (
     <div className="container mx-auto max-w-6xl p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -160,22 +166,46 @@ export default function DatasetForge() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label>Dataset Category</Label>
-                <Select value={datasetType} onValueChange={(val) => setDatasetType(val as DatasetType)} disabled={advancedMode}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select type..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DATASET_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        <div className="flex items-center gap-2">
-                          {t.icon}
-                          <span>{t.label}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Dataset Category (Select or Type)</Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input 
+                      placeholder="e.g. Clinical Trials, Tweets, Luxury Hotels..." 
+                      value={datasetType}
+                      onChange={(e) => setDatasetType(e.target.value)}
+                      disabled={advancedMode}
+                      className="pr-10"
+                    />
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground opacity-50" />
+                  </div>
+                  <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="icon" disabled={advancedMode} title="Quick Select Preset">
+                        <ChevronDown className="w-4 h-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[300px] p-0" align="end">
+                      <div className="p-2 border-b bg-secondary/20">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2">Common Presets</p>
+                      </div>
+                      <div className="max-h-[300px] overflow-auto p-1">
+                        {DATASET_TYPES.map((t) => (
+                          <button
+                            key={t.value}
+                            onClick={() => selectPreset(t.value)}
+                            className={cn(
+                              "w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors hover:bg-secondary",
+                              datasetType === t.value && "bg-primary/5 text-primary font-medium"
+                            )}
+                          >
+                            <span className="text-accent">{t.icon}</span>
+                            <span>{t.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
               </div>
 
               <div className="space-y-2">
